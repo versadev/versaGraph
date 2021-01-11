@@ -17,7 +17,7 @@
             visibility: visible;
             bottom:10px;
             right:10px;
-            width:500px;
+            width:300px;
             height:200px;
             padding:5px;
             border:1px solid #000000;
@@ -30,6 +30,20 @@
             visibility: hidden;
         }
 
+        .statsWindow {
+            position:absolute;
+            display: block;
+            visibility: visible;            
+            bottom:250px;
+            right:10px;
+            width:300px;
+            height:100px;
+            padding:5px;
+            border:1px solid #000000;
+            overflow:scroll;
+            background-color:#EFFF99;
+        }
+
     </style>
 
     <script src="scripts/jquery-3.2.1.js"></script>
@@ -39,16 +53,26 @@
         var versaGraph = (function () {
 
             // Private Global Variables And Functions
-
-            var frameRate = 0; // Initialise frame rate
+            var isDebug = true; // Show or hide debug window
+            var isStats = true; // Show or hide stats window
 
             var c = null; // Canvas Object
             var ctx = null; // Canvas Object Context
 
-            var animatePlot = false; // enable or disable plot animation
-            var animateAcceleration = 0.5; // apply acceleration to animation
-            var delta = 0;
+            var animatePlot = true; // enable or disable plot animation
+            var animateAcceleration = 0.01; // apply acceleration to animation
+            var animationComplete = false; // indicate plot animation complete
+            var delta = 1;
             var pointsPlotted = 0; // track the number of points plotted when animatePlot is enabled
+            var pointsPlottedStart = 0;
+
+            var frameCount = 0; // Number of total rendered frames
+            var framesElapsed = 0; // Number of frames elapsed. Used to calculate FPS
+            var FPS = 0; // Number of Frames per Second. Read only and calculated based on GPU capability            
+            var currTime = null;
+            var lastTime = null;
+            var deltaTime = null;
+            var AniFrame = null;
 
             // Set default x and y display range
             var xRangeMin = -100;
@@ -113,10 +137,11 @@
             var x1Last = null;
             var y1Last = null;
 
-            var seriesData = new Array(); // An Array To Hold A Collection Of Data Points.
+            var seriesData = new Array(); // An array to hold a collection of data points
+            var timers = new Array(); // An array to hold a collection of timers
 
             var drawCircle = function (x1, y1, radius, color, fill) {
-                // Function - Draw A Circle
+                // Function - Draw a circle
                 ctx.lineWidth = 1;
                 ctx.strokeStyle = color;
                 ctx.beginPath();
@@ -152,7 +177,7 @@
             };
 
             var drawLine = function (x1, y1, x2, y2, colour, lineWidth) {
-                // Function - Draw A Line
+                // Function - Draw a line
                 ctx.strokeStyle = colour;
                 ctx.lineWidth = lineWidth;
                 ctx.lineJoin = 'bevel';
@@ -180,7 +205,7 @@
                             xRangeMin = seriesData[i].x1;
                             xRangeMax = seriesData[i].x1;
                             yRangeMin = seriesData[i].y1;
-                            yRangeMax = seriesData[i].y1
+                            yRangeMax = seriesData[i].y1;
                         }
 
                         if (seriesData[i].x1 <= xRangeMin) {
@@ -363,39 +388,94 @@
                 ctx.rotate(angleInRadians);
                 ctx.fillText(yAxisLabel, -0.5 * textWidth, -0.5 * yAxisLabelSize);
                 ctx.restore();
-                            
-                // Display the series data
-                animateAcceleration = (animateAcceleration * animateAcceleration);
-                delta = delta + parseInt(animateAcceleration);
-
-                if (animatePlot == true) {
-                    pointsPlotted = pointsPlotted + delta;
-                    if (pointsPlotted >= seriesData.length - 1) {
-                        pointsPlotted = seriesData.length - 1;
-                        animatePlot = false;
-                    }
-                    //versadev.debugWindow(delta.toString());
-                } else {
-                    pointsPlotted = seriesData.length - 1;
-                }
-
-                for (i = 0; i <= pointsPlotted; i++) {
-                    x1 = seriesData[i].x1;
-                    y1 = seriesData[i].y1;
-                    drawPoint(x1, y1, graphDataPointColour, 4, 1);
-                }           
-                
+                                                    
             };
 
-            // Define Data Class
+            var displayData = function() {
+
+                // Display the series data
+                //animateAcceleration = animateAcceleration * animateAcceleration;
+                //animateAcceleration = animateAcceleration + animateAcceleration;
+                animateAcceleration = 0.02 * animateAcceleration;
+                delta = delta + parseInt(animateAcceleration);
+             
+
+                if (animatePlot == true) {
+                    
+                    /*
+                    if (animationComplete == false) {
+                        pointsPlottedStart = pointsPlotted;
+                        if (pointsPlottedStart > 0) {
+                            pointsPlottedStart = pointsPlottedStart + 1;
+                        }
+                        pointsPlotted = pointsPlotted + delta;
+                        if (pointsPlotted >= seriesData.length - 1) {
+                            pointsPlotted = seriesData.length - 1;
+                            animationComplete = true;
+                        }
+                        versadev.debugWindow('framesElapsed = ' + framesElapsed + ' delta = ' + delta.toString() + ' pointsPlottedStart = ' + pointsPlottedStart.toString() + ' pointsPlotted = ' + pointsPlotted.toString());
+
+                        for (i = pointsPlottedStart; i <= pointsPlotted; i++) {
+                            x1 = seriesData[i].x1;
+                            y1 = seriesData[i].y1;
+                            drawPoint(x1, y1, graphDataPointColour, 4, 1);
+                        } 
+
+                    }
+                    */
+
+                    pointsPlotted = seriesData.length - 1;
+
+                    for (i = 0; i <= pointsPlotted; i++) {
+                        x1 = seriesData[i].x1;
+                        y1 = seriesData[i].y1;
+                        drawPoint(x1, y1, graphDataPointColour, 4, 1);
+                    }
+
+                    animationComplete = true;
+
+                } else {
+
+                    pointsPlotted = seriesData.length - 1;
+
+                    for (i = 0; i <= pointsPlotted; i++) {
+                        x1 = seriesData[i].x1;
+                        y1 = seriesData[i].y1;
+                        drawPoint(x1, y1, graphDataPointColour, 4, 1);
+                    }  
+                }
+
+            };
+
+            // Define Data class
             var xyData = function (id, x1, y1) {
 
-                // Object Representing A Data Point
+                // Object representing a data point
                 this.id = id;
                 this.x1 = x1;
                 this.y1 = y1;
 
                 // Attach methods to object here                    
+
+            };
+
+            // Define Timer class
+            var timer = function (id, isActive, duration, elapsedTime) {
+
+                // Object representing a timer
+                this.id = id;
+                this.isActive = isActive;
+                this.duration = duration; // the time to wait in milliseconds before activating
+                this.elapsedTime = elapsedTime; // the time elapsed in milliseconds to be compared with duration
+
+                // Attach methods to object here                    
+                this.Active = function() {
+                    this.isActive = true;
+                }
+
+                this.InActive = function() {
+                    this.isActive = false;
+                }
 
             };
 
@@ -408,9 +488,150 @@
 
             var renderScene = function (delta) {
 
-                // Display graph
+                // Redraw the graph axes
                 drawGraph();
 
+                // Display graph data
+                displayData();
+
+                // Update animation stats
+                updateAnimationStats();
+
+                // Keep Looping
+                AniFrame(renderScene);
+
+            };
+
+            var generateGraphData = function (mode) {
+
+                // This function generates sample xy data for plotting
+                        
+                var x1 = 0;
+                var y1 = 0;
+
+                var yDataMin = -5;
+                var yDataMax = 50;
+
+                var arrayIndex = 0;
+
+                for (i = yDataMin; i <= yDataMax; i++) {
+
+                    // Generate quadratic xy data
+                    //x1 = i;
+                    //y1 = x1 * x1;
+
+                    if (mode == 0) {
+
+                        if (arrayIndex == 0) {
+                            // Clear current series data before generating first data point
+                            x1Last = null;
+                            y1Last = null;
+                            seriesData.length = 0;
+                        }
+
+                        // Generate random data for all elements of series data
+                        x1 = i;
+                        y1 = versadev.randomNumberFromRange(yDataMin, yDataMax);
+
+                        // Generate data point and add to series (collection)
+                        var dataPoint = new xyData(i, x1, y1);
+                        seriesData.push(dataPoint);
+
+                    }
+
+                    if (mode == 1) {
+                        // Shift the series data and only generate a new data point for the last element                            
+
+                        if (arrayIndex < seriesData.length - 1) {
+                            //seriesData[arrayIndex].x1 = seriesData[arrayIndex + 1].x1;
+                            seriesData[arrayIndex].y1 = seriesData[arrayIndex + 1].y1;
+                        } else {                            
+                            seriesData[arrayIndex].y1 = versadev.randomNumberFromRange(yDataMin, yDataMax);
+                        }
+
+                    }
+
+                    arrayIndex ++;
+
+                }
+
+            }
+
+            var updateAnimationStats = function () {
+               
+               frameCount++; // Increment the total frame count
+
+               if (isStats == true) {
+                   $('#frameCount').text(frameCount);
+               }
+
+               // Calculate FPS
+               currTime = new Date().getTime(); // Get current time
+               deltaTime = (currTime - lastTime) // Determine time (milliseconds) between last frame
+               
+               timers[0].elapsedTime = timers[0].elapsedTime + deltaTime;
+               timers[1].elapsedTime = timers[1].elapsedTime + deltaTime;
+
+               lastTime = currTime // Update last time
+               framesElapsed++; // Increment the elapsed frames used to determine FPS
+
+               // Check if elapsed time is greater than or equal to 1000 milliseconds
+               if (timers[0].elapsedTime >= timers[0].duration) {
+
+                    // Mark timer as active
+                    timers[0].Active();
+
+                   // Calculate FPS
+                   var FPS = 0;
+                   FPS = parseInt(framesElapsed / (timers[0].elapsedTime / 1000)).toString();
+
+                   // Reset timer
+                   timers[0].InActive();
+                   timers[0].elapsedTime = 0;
+                   
+                   // Reset counters
+                   framesElapsed = 0;
+                   if (isStats == true) {
+                       $('#fps').text(FPS); // Display FPS
+                   }
+               }
+
+               // Check if we need to generate new data point or data
+               if (timers[1].elapsedTime >= timers[1].duration) {
+
+                    // Mark timer as active
+                    timers[1].Active();
+
+                    // Generate new data
+                    generateGraphData(1);
+
+                    // Reset timer
+                    timers[1].InActive();
+                    timers[1].elapsedTime = 0;
+
+                    // Reset animation
+                    animationComplete = false;
+                    pointsPlotted = 0;
+                    pointsPlottedStart = 0;
+               }
+
+               if (isStats == true) {
+                 $('#ndg').text(timers[1].elapsedTime);
+               }
+              
+            };
+
+            var reqAniFrame = function () {
+
+                // Finds the first API that works to optimize the animation / game loop, otherwise defaults to setTimeout().                
+                return window.requestAnimationFrame ||
+                window.webkitRequestAnimationFrame ||
+                window.mozRequestAnimationFrame ||
+                window.oRequestAnimationFrame ||
+                window.msRequestAnimationFrame ||
+                function (/* function */ callback, /* DOMElement */ element) {
+                    window.setTimeout(callback, 1000 / 60);
+                };                
             };
 
             // Privileged / Public Methods And Properties
@@ -420,6 +641,22 @@
 
                 init: function() {
                 
+                    animationComplete = false; // reset animation complete, if animation enabled
+
+                    // Check for Debug mode
+                    if (isDebug == true) {
+                        $('#debugWindow').css('display', 'block');
+                    } else {
+                        $('#debugWindow').css('display', 'none');
+                    }
+
+                    // Check for Stats mode
+                    if (isStats == true) {                        
+                        $('#statsWindow').css('display', 'block');
+                    } else {                        
+                        $('#statsWindow').css('display', 'none');
+                    }
+
                     // Get the canvas element using DOM
                     c = document.getElementById('canvasGraph');
 
@@ -429,36 +666,30 @@
                         // Use getContext to use the canvas for drawing
                         ctx = c.getContext("2d");
 
-                        // Generate xy data
+                        // Setup timers
+                        let timer1 = new timer(1, false, 1000, 0); // Defines duration to wait before updating stats window
+                        timers.push(timer1);
 
-                        var x1 = 0;
-                        var y1 = 0;
+                        let timer2 = new timer(2, false, 100, 0); // Defines duration to wait before generating new data
+                        timers.push(timer2);
 
-                        // Clear current series data
-                        x1Last = null;
-                        y1Last = null;
-                        seriesData.length = 0;
-
-                        for (i = -100; i <= 100; i++) {
-
-                            // Generate quadratic xy data
-                            //x1 = i;
-                            //y1 = x1 * x1;
-
-                            // Generate random data
-                            var yMin = -100;
-                            var yMax = 100;
-                            x1 = i;
-                            y1 = versadev.randomNumberFromRange(yMin, yMax);
-
-                            // Generate data point and add to series (collection)
-                            var dataPoint = new xyData(i, x1, y1);
-                            seriesData.push(dataPoint);
-                        }
+                        // Generate sample xy data to display
+                        generateGraphData(0);
 
                         // Display graph
                         drawGraph();
-                        fw_update();
+
+                        if (animatePlot == true) {
+                            // Setup the animation
+                            AniFrame = reqAniFrame();                   
+                            AniFrame(renderScene); // Start the animation
+                        } else {
+                            displayData();
+                        }
+
+                        // Display graph
+                        //drawGraph();
+                        //fw_update();
 
                     } else {
                         window.alert('Your browser does not support HTML5.');
@@ -545,8 +776,14 @@
             <canvas id="canvasGraph" width="800" height="600" style="border:1px solid #000000;"></canvas> 
         </div>
     
-        <div id="debugWindow" style="position:absolute;bottom:10px;right:10px;width:500px;height:200px;padding:5px;border:1px solid #000000;overflow:scroll;background-color:#EFFF99;">
+        <div id="debugWindow" class="debugWindow">
             Debug Window
+        </div>
+
+        <div id="statsWindow" class="statsWindow">
+            Frame count: <span id="frameCount">0</span><br />
+            FPS: <span id="fps">0</span><br />
+            New Data Gen Elapsed Count: <span id="ndg">0</span><br />
         </div>
 
         <hr />
